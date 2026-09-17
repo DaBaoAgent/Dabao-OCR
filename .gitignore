@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# 虚拟环境
+.venv/
+venv/
+
+# 测试缓存
+.pytest_cache/
+.coverage
+
+# 引擎运行时产物（若用户自建）
+vendor/RapidOCR-json/*.log

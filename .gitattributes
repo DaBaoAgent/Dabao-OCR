@@ -1,0 +1,12 @@
+# 文本文件仓库内统一 LF
+* text=auto eol=lf
+
+# 二进制文件（不做任何转换）
+*.exe binary
+*.onnx binary
+*.png binary
+*.jpg binary
+*.pdf binary
+
+# 引擎字典/配置为运行时数据，保持原样（避免行尾转换影响引擎读取）
+vendor/RapidOCR-json/models/*.txt binary

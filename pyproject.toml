@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dabao-ocr"
+description = "离线 OCR 后端 —— Umi-OCR 衍生的 agent 友好工具包（RapidOCR-json 引擎）"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Dabao (Xiaobao) Company" }]
+keywords = ["ocr", "offline", "rapidocr", "umi-ocr", "agent", "chinese"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Text Processing",
+]
+dynamic = ["version"]
+dependencies = []
+
+[project.optional-dependencies]
+pdf = ["PyMuPDF>=1.24"]
+dev = ["pytest>=8", "PyMuPDF>=1.24"]
+
+[project.scripts]
+dabao-ocr = "dabao_ocr.cli:main"
+
+[tool.setuptools]
+packages = [
+    "dabao_ocr",
+    "dabao_ocr.tbpu",
+    "dabao_ocr.tbpu.parser_tools",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "dabao_ocr._version.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
