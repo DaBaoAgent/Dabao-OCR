@@ -14,5 +14,8 @@ venv/
 .pytest_cache/
 .coverage
 
+# 服务日志
+logs/
+
 # 引擎运行时产物（若用户自建）
 vendor/RapidOCR-json/*.log

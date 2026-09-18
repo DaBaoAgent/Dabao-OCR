@@ -129,6 +129,25 @@ dabao-ocr serve &                          # 只启动一次
 curl -s 127.0.0.1:18224/api/ocr -X POST -d '{"path":"..."}'
 ```
 
+## 开机自启（Windows，可选）
+
+一键部署「登录自启 + 看门狗保活」（服务常驻 `127.0.0.1:18224`）：
+
+```bash
+.venv/Scripts/python.exe scripts/install_autostart.py            # 安装并立即生效
+.venv/Scripts/python.exe scripts/install_autostart.py --status    # 查看状态
+.venv/Scripts/python.exe scripts/install_autostart.py --uninstall # 卸载
+```
+
+部署内容：
+
+| 组件 | 作用 |
+|---|---|
+| `Startup\DabaoOCR.vbs` | 登录时静默启动服务（经 `scripts/serve.cmd`，带单实例守卫） |
+| 计划任务 `DabaoOCR_Watchdog` | 每 5 分钟健康检查（`/api/status`），服务掉了自动拉起 |
+
+服务日志：`logs/serve.log`。
+
 ## 项目结构
 
 ```
@@ -144,6 +163,10 @@ Dabao-OCR/
 │   ├── server.py              #   HTTP 服务（stdlib 实现）
 │   └── cli.py                 #   命令行入口
 ├── vendor/RapidOCR-json/      # 引擎二进制 + 模型（MIT, © hiroi-sora）
+├── scripts/                   # 部署脚本
+│   ├── serve.cmd              #   单实例启动脚本（自启用）
+│   ├── watchdog.py            #   看门狗（健康检查 + 自动拉起）
+│   └── install_autostart.py   #   开机自启安装/卸载/状态
 ├── tests/                     # 测试套件（含与原版的一致性对比）
 ├── examples/agent-usage.md    # agent 使用手册
 ├── docs/STRIPPING.md          # 剥离与重写记录（相对 Umi-OCR 的差异）
