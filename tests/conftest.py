@@ -17,11 +17,11 @@ IMG_ZH2 = str(ASSETS / "multi_column.png")
 IMG_MULTI = str(ASSETS / "multi_column.png")
 PDF_SAMPLE = str(ASSETS / "sample_two_pages.pdf")
 
-# 原版 Umi-OCR 安装位置（用于一致性对比测试；不存在时相关测试自动跳过）
-ORIGIN_UMI_TBPU = Path(
-    r"D:\@kaifa\Umi-OCR\Umi-OCR_Rapid_v2.1.5\UmiOCR-data\py_src\ocr\tbpu"
-)
-ORIGIN_UMI_API = "http://127.0.0.1:1224"
+# 注：原版 Umi-OCR 对比测试（test_parity_umi / test_tbpu_parity）已于 2026-09-20
+# 随本机 Umi-OCR 被彻底删除而移除 —— 它们依赖的 ORIGIN_UMI_TBPU 源码路径与
+# ORIGIN_UMI_API(:1224) 在本机都不再存在，留着也只是永久 skip 的假覆盖。
+# 需要重做「与原版逐字符/逐块一致」的金标准验证时：自行安装原版 Umi-OCR，
+# 并按 git 历史（本次移除提交的父提交）恢复这两个测试文件即可。
 
 
 @pytest.fixture(scope="session", autouse=True)

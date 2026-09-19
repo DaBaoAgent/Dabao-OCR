@@ -39,15 +39,20 @@
 - HTTP 增强端点：`/api/ocr/batch`、`/api/pdf`（同步返回文本/双层）、`/api/status`
 - `/api/ocr` 支持 `path` 字段（服务器本机路径直读，免 base64）
 - Python 包化（`pip install -e .`），`class OcrResult` 结果模型
-- 测试套件：**与原版 tbpu 源码的逐块一致性对比** + **与原版 HTTP 服务的逐字符对比**（金标准）
+- 测试套件：引擎/识别/排版/HTTP/CLI 全路径（原「与原版逐块/逐字符对比」的金标准测试见下方一致性说明）
 
 ## 一致性保证
 
 - 识别结果：同引擎、同默认参数（简中 / maxSideLen 1024 / angle off）下与原版**逐字符一致**
-  （测试证据：`tests/test_parity_umi.py`，对原版在线服务直接对比）
 - 排版解析：8 种方案 × 5 类输入场景与原版**逐块一致**
-  （测试证据：`tests/test_tbpu_parity.py`，直接加载原版源码对比）
-- HTTP 选项表：与原版 `get_options` 响应**完全一致**（同上测试）
+- HTTP 选项表：与原版 `get_options` 响应**完全一致**
+
+> 以上结论来自当时的对比测试（`tests/test_parity_umi.py` 对原版在线服务、
+> `tests/test_tbpu_parity.py` 直接加载原版源码）。这两个测试**已于 2026-09-20 移除**：
+> 开发机的原版 Umi-OCR 被彻底删除，它们退化成永久 skip 的空覆盖。
+> 结论本身仍然成立（同源 RapidOCR 引擎 + 移植的 tbpu 解析），
+> 另有实测旁证：生产侧 AutoETF 用同批 8 张真实委托截图对比两个端点，
+> **逐字段一致、76 块原始文本框的文本与置信度完全相同**。
 
 ## 升级路径
 

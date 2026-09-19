@@ -185,10 +185,11 @@ uv pip install --python .venv/Scripts/python.exe -e ".[dev]"
 8 种排版解析、忽略区域、6 类语言切换、PDF（渲染/识别/双层/可搜索）、
 HTTP API（兼容协议/错误码/CORS/增强端点）、CLI 端到端。
 
-**一致性验证（重点）**：`tests/test_tbpu_parity.py` 把本仓库移植的排版解析
-与 Umi-OCR 原版源码逐块对比（8 方案 × 5 场景）；`tests/test_parity_umi.py`
-在本机原版 Umi-OCR 服务（:1224）在线时与其逐字符对比识别输出——
-两套测试在开发机上全部通过。
+**一致性验证（重点）**：本仓库移植的排版解析与 Umi-OCR 原版源码逐块对比
+（8 方案 × 5 场景）、识别输出与原版 HTTP 服务（:1224）逐字符对比，两者在开发机上
+全部通过。这两套对比测试（`tests/test_parity_umi.py` / `tests/test_tbpu_parity.py`）
+**已于 2026-09-20 移除**——开发机的原版 Umi-OCR 被彻底删除后它们只剩永久 skip；
+需要重做金标准验证时，装回原版 Umi-OCR 并按 git 历史恢复测试文件即可。
 
 ## 已知边界
 
