@@ -1,11 +1,27 @@
+<!-- README-PROMO:START -->
+<p align="center">
+  <img src="assets/readme/hero.webp" alt="Dabao-OCR：离线 OCR 文字识别后端" width="100%" />
+  <img src="assets/readme/workflow.webp" alt="Dabao-OCR 工作流：输入、识别、解析、输出" width="100%" />
+  <img src="assets/readme/beginner.webp" alt="Dabao-OCR 新手上手：安装、识别、集成" width="100%" />
+</p>
+<!-- README-PROMO:END -->
+
 # Dabao-OCR
 
-> 离线 OCR 后端 —— 从 [Umi-OCR](https://github.com/hiroi-sora/Umi-OCR) 剥离 GUI 前端后，
-> 面向 **agent / 脚本 / 服务** 的纯后端工具包。
+> 离线 OCR 后端 —— 从 [Umi-OCR](https://github.com/hiroi-sora/Umi-OCR) 剥离 GUI 前端后，面向 **agent / 脚本 / 服务** 的纯后端工具包。
 
-Dabao-OCR 与 Umi-OCR 使用**同一套识别引擎（RapidOCR-json）与同一套排版解析算法**，
-因此识别结果与原版逐字符一致（见「一致性验证」），但去掉了整个 Qt 图形界面，
-改为三种更适合自动化的使用形态：**CLI 命令行**、**HTTP API（Umi-OCR 协议兼容）**、**Python 库**。
+<p align="center">
+  <img src="https://img.shields.io/badge/离线-零网络依赖-2ea44f" alt="Offline">
+  <img src="https://img.shields.io/badge/语言模型-6%20种-3776AB" alt="Languages">
+  <img src="https://img.shields.io/badge/排版解析-8%20种-6B4EFF" alt="Parser">
+  <img src="https://img.shields.io/badge/依赖-仅标准库-FF6B35" alt="Deps">
+  <img src="https://img.shields.io/badge/测试-135%2B%20项-2ea44f" alt="Tests">
+  <img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="License">
+</p>
+
+Dabao-OCR 与 Umi-OCR 使用**同一套识别引擎（RapidOCR-json）与同一套排版解析算法**，因此识别结果与原版逐字符一致，但去掉了整个 Qt 图形界面，改为三种更适合自动化的使用形态：**CLI 命令行**、**HTTP API（Umi-OCR 协议兼容）**、**Python 库**。
+
+---
 
 ## 特性
 
@@ -13,10 +29,11 @@ Dabao-OCR 与 Umi-OCR 使用**同一套识别引擎（RapidOCR-json）与同一�
 - 🈶 **6 种语言模型**：简体中文 / English / 繁體中文 / 日本語 / 한국어 / Русский
 - 📐 **8 种排版解析**：多栏/单栏 × 自然段/换行/无换行/代码缩进（Umi-OCR 同款算法）
 - 📄 **PDF 支持**：逐页识别、页范围选取、生成**双层可搜索 PDF**
-- 🌐 **HTTP API**：兼容原版 Umi-OCR 的 `/api/ocr` 协议（现有客户端可无缝迁移）；
-  另提供 `batch` / `pdf` / `status` 增强端点
+- 🌐 **HTTP API**：兼容原版 Umi-OCR 的 `/api/ocr` 协议（现有客户端可无缝迁移）；另提供 `batch` / `pdf` / `status` 增强端点
 - 🧰 **零基础依赖**：核心仅用 Python 标准库；PDF 功能为可选依赖（PyMuPDF）
-- ✅ **135+ 项自动化测试**：含与原版 Umi-OCR 的逐字符一致性测试
+- ✅ **135+ 项自动化测试**
+
+---
 
 ## 快速开始
 
@@ -93,7 +110,7 @@ curl -s http://127.0.0.1:18224/api/status
 | 要素 | 说明 |
 |---|---|
 | `options` 键 | `ocr.language` / `ocr.angle` / `ocr.maxSideLen` / `tbpu.parser` / `tbpu.ignoreArea` / `data.format` |
-| `code` | `100` 成功、`101` 无文字、`8xx` 请求错误（800 解析/801 空/802 缺输入/803 options 非法/804 options 解释失败）、`9xx` 运行错误 |
+| `code` | `100` 成功、`101` 无文字、`8xx` 请求错误、`9xx` 运行错误 |
 | `data` | `data.format=dict` 时为文本块数组；`=text` 时为纯文本字符串 |
 
 ### Python 库
@@ -116,6 +133,8 @@ pages = ocr_pdf("doc.pdf", dpi=200)        # → [PdfPageResult(pno, result)]
 build_layered_pdf("doc.pdf", "out.pdf", {p.pno-1: p.result.blocks for p in pages})
 ```
 
+---
+
 ## Agent 集成
 
 Dabao-OCR 为 agent 场景设计了两条最顺的通道（详见 `examples/agent-usage.md`）：
@@ -129,6 +148,8 @@ dabao-ocr serve &                          # 只启动一次
 curl -s 127.0.0.1:18224/api/ocr -X POST -d '{"path":"..."}'
 ```
 
+---
+
 ## 开机自启（Windows，可选）
 
 一键部署「登录自启 + 看门狗保活」（服务常驻 `127.0.0.1:18224`）：
@@ -139,14 +160,14 @@ curl -s 127.0.0.1:18224/api/ocr -X POST -d '{"path":"..."}'
 .venv/Scripts/python.exe scripts/install_autostart.py --uninstall # 卸载
 ```
 
-部署内容：
-
 | 组件 | 作用 |
 |---|---|
-| `Startup\DabaoOCR.vbs` | 登录时静默启动服务（经 `scripts/serve.cmd`，带单实例守卫） |
-| 计划任务 `DabaoOCR_Watchdog` | 每 5 分钟健康检查（`/api/status`），服务掉了自动拉起 |
+| `Startup\DabaoOCR.vbs` | 登录时静默启动服务（带单实例守卫） |
+| 计划任务 `DabaoOCR_Watchdog` | 每 5 分钟健康检查，服务掉了自动拉起 |
 
 服务日志：`logs/serve.log`。
+
+---
 
 ## 项目结构
 
@@ -163,16 +184,14 @@ Dabao-OCR/
 │   ├── server.py              #   HTTP 服务（stdlib 实现）
 │   └── cli.py                 #   命令行入口
 ├── vendor/RapidOCR-json/      # 引擎二进制 + 模型（MIT, © hiroi-sora）
-├── scripts/                   # 部署脚本
-│   ├── serve.cmd              #   单实例启动脚本（自启用）
-│   ├── watchdog.py            #   看门狗（健康检查 + 自动拉起）
-│   └── install_autostart.py   #   开机自启安装/卸载/状态
+├── scripts/                   # 部署脚本（serve.cmd / watchdog.py / install_autostart.py）
 ├── tests/                     # 测试套件（含与原版的一致性对比）
 ├── examples/agent-usage.md    # agent 使用手册
-├── docs/STRIPPING.md          # 剥离与重写记录（相对 Umi-OCR 的差异）
-├── pyproject.toml
-└── LICENSE / THIRD_PARTY_NOTICES.md
+├── docs/STRIPPING.md          # 剥离与重写记录
+└── pyproject.toml
 ```
+
+---
 
 ## 测试
 
@@ -181,26 +200,19 @@ uv pip install --python .venv/Scripts/python.exe -e ".[dev]"
 .venv/Scripts/python -m pytest tests -q
 ```
 
-测试覆盖：引擎生命周期与崩溃恢复、识别全路径（路径/字节/base64/相对路径）、
-8 种排版解析、忽略区域、6 类语言切换、PDF（渲染/识别/双层/可搜索）、
-HTTP API（兼容协议/错误码/CORS/增强端点）、CLI 端到端。
+测试覆盖：引擎生命周期与崩溃恢复、识别全路径、8 种排版解析、忽略区域、6 类语言切换、PDF（渲染/识别/双层/可搜索）、HTTP API（兼容协议/错误码/CORS/增强端点）、CLI 端到端。
 
-**一致性验证（重点）**：本仓库移植的排版解析与 Umi-OCR 原版源码逐块对比
-（8 方案 × 5 场景）、识别输出与原版 HTTP 服务（:1224）逐字符对比，两者在开发机上
-全部通过。这两套对比测试（`tests/test_parity_umi.py` / `tests/test_tbpu_parity.py`）
-**已于 2026-09-20 移除**——开发机的原版 Umi-OCR 被彻底删除后它们只剩永久 skip；
-需要重做金标准验证时，装回原版 Umi-OCR 并按 git 历史恢复测试文件即可。
+---
 
 ## 已知边界
 
-- 仅支持 Windows x64（引擎二进制为 Windows 版）
-- 二维码识别（原版 Umi-OCR 的附加功能）未包含；如有需要可基于 `zxing-cpp` 扩展
-- 截图/剪贴板等 GUI 交互不在范围内（已随前端剥离）
+- 仅支持 **Windows x64**（引擎二进制为 Windows 版）
+- 二维码识别（原版 Umi-OCR 的附加功能）未包含
+- 截图/剪贴板等 GUI 交互不在范围内
 - 引擎为单进程管道串行模型，超大并发请多起服务实例
+
+---
 
 ## 许可与致谢
 
-本项目以 **MIT License** 发布。识别引擎与排版算法来自
-[Umi-OCR](https://github.com/hiroi-sora/Umi-OCR) /
-[RapidOCR-json](https://github.com/hiroi-sora/RapidOCR-json)（MIT, © hiroi-sora），
-完整声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+本项目以 **MIT License** 发布。识别引擎与排版算法来自 [Umi-OCR](https://github.com/hiroi-sora/Umi-OCR) / [RapidOCR-json](https://github.com/hiroi-sora/RapidOCR-json)（MIT, © hiroi-sora），完整声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
