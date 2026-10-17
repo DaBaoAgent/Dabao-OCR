@@ -131,3 +131,22 @@ class TestVersion:
         r = run_cli("--version")
         assert r.returncode == 0
         assert "Dabao-OCR" in r.stdout
+
+    def test_version_matches_single_source(self):
+        """--version 输出必须与 _version.py 同源，防止升版时漏改一处。"""
+        from dabao_ocr._version import __version__
+
+        r = run_cli("--version")
+        assert __version__ in r.stdout
+
+    def test_installed_metadata_matches_source(self):
+        """安装元数据与源码版本一致；否则 `pip show` 会显示旧版本。"""
+        import importlib.metadata as md
+
+        from dabao_ocr._version import __version__
+
+        try:
+            installed = md.version("dabao-ocr")
+        except md.PackageNotFoundError:
+            pytest.skip("包未以可安装形式装进当前环境")
+        assert installed == __version__
