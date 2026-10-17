@@ -33,7 +33,7 @@ Dabao-OCR 与 Umi-OCR 使用**同一套识别引擎（RapidOCR-json）与同一�
 - 🌐 **HTTP API**：兼容原版 Umi-OCR 的 `/api/ocr` 协议（现有客户端可无缝迁移）；另提供 `batch` / `pdf` / `status` 增强端点
 - ⚡ **CLI 快通道**：检测到本机常驻服务时自动复用，省掉每次调用的引擎冷启动（`--no-service` 可强制本地）
 - 🧰 **零基础依赖**：核心仅用 Python 标准库；PDF 功能为可选依赖（PyMuPDF）
-- ✅ **85 项自动化测试**
+- ✅ **180+ 项自动化测试**，覆盖 CLI / HTTP / 库 / PDF / 打包元数据
 
 ---
 
@@ -41,9 +41,9 @@ Dabao-OCR 与 Umi-OCR 使用**同一套识别引擎（RapidOCR-json）与同一�
 
 要求：Windows x64、Python ≥ 3.9（仓库自带引擎与模型）。
 
-> 实际验证过的运行时：**Python 3.13.15**（日常开发）与 **3.10.20**（全套 174 项测试通过）。
+> 实际验证过的运行时：**Python 3.13.15**（日常开发）与 **3.10.20**（全套测试通过）。
 > 代码只用到 3.8 级别的语法与 stdlib（无 PEP 604 联合类型、无 `match`），故 3.9 亦可运行，
-> 但该版本尚未在实机跑过测试。
+> 但该版本尚未在实机跑过测试。新增代码若用到更高版本语法，`tests/test_packaging.py` 会报错。
 
 ```bash
 # 1. 准备虚拟环境（可选但推荐）
@@ -58,6 +58,12 @@ uv pip install --python .venv/Scripts/python.exe -e ".[pdf]" # 含 PDF 功能
 ```
 
 > 未安装包时也可直接 `python -m dabao_ocr ...`（在仓库根目录下运行）。
+>
+> **请从仓库安装，不要只用 `pip install dabao-ocr`。** 引擎与模型（约 60 MB，
+> `vendor/RapidOCR-json/`）不随 PyPI 包分发：wheel 只含 Python 代码（约 58 KB），
+> 装到别处会因找不到引擎而无法识别。若确实只想装代码，装完后设置
+> `DABAO_OCR_ENGINE_DIR` 指向你自己的 `RapidOCR-json` 目录即可。
+> （缺引擎时 `dabao-ocr info` 不会崩溃，会在 `engine_dir` 字段直接写明缺失路径。）
 
 ### CLI 速查
 
