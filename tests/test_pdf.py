@@ -26,6 +26,10 @@ class TestPagesSpec:
     def test_bounds(self):
         assert parse_pages_spec("1-99", 3) == [0, 1, 2]
 
+    def test_overlapping_ranges_dedup(self):
+        assert parse_pages_spec("1-2,2-3", 5) == [0, 1, 2]
+        assert parse_pages_spec("2,2,1", 5) == [0, 1]
+
 
 class TestRenderPdf:
     def test_render_pages(self):

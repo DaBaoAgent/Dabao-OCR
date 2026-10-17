@@ -5,9 +5,7 @@
 依赖 PyMuPDF（fitz）。
 """
 
-import os
 from dataclasses import dataclass
-from pathlib import Path
 
 from .log import logger
 from .ocr import DEFAULT_PARSER, _finish
@@ -16,29 +14,31 @@ from .result import OcrResult
 # 渲染 DPI：越高越准越慢（Umi-OCR 默认档位 120 左右；agent 场景默认 200 平衡）
 DEFAULT_DPI = 200
 
+_FITZ = None  # 模块级缓存，避免每次调用都重新 import
+
 
 def _require_fitz():
+    global _FITZ
+    if _FITZ is not None:
+        return _FITZ
     try:
         import pymupdf as fitz  # PyMuPDF >= 1.24 新名
-
-        return fitz
     except ImportError:
-        pass
-    try:
-        import fitz
-
-        return fitz
-    except ImportError as e:
-        raise ImportError(
-            "PDF 功能需要 PyMuPDF：pip install PyMuPDF（或 pip install dabao-ocr[pdf]）"
-        ) from e
+        try:
+            import fitz
+        except ImportError as e:
+            raise ImportError(
+                "PDF 功能需要 PyMuPDF：pip install PyMuPDF（或 pip install dabao-ocr[pdf]）"
+            ) from e
+    _FITZ = fitz
+    return fitz
 
 
 def parse_pages_spec(spec, total: int) -> list:
     """解析页范围字符串，如 '1-3,5' → [0,1,2,4]（0 基）。None → 全部页。"""
     if not spec:
         return list(range(total))
-    out = []
+    out = set()
     for part in str(spec).split(","):
         part = part.strip()
         if not part:
@@ -48,12 +48,12 @@ def parse_pages_spec(spec, total: int) -> list:
             a = int(a) if a.strip() else 1
             b = int(b) if b.strip() else total
             for i in range(a, b + 1):
-                if 1 <= i <= total and (i - 1) not in out:
-                    out.append(i - 1)
+                if 1 <= i <= total:
+                    out.add(i - 1)
         else:
             i = int(part)
-            if 1 <= i <= total and (i - 1) not in out:
-                out.append(i - 1)
+            if 1 <= i <= total:
+                out.add(i - 1)
     return sorted(out)
 
 

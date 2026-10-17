@@ -3,21 +3,22 @@
 from .tbpu import Tbpu
 
 
+def isInBox(a, b) -> bool:
+    """矩形框 a 是否包含 b（两者均为 [[x1,y1],[...],[x2,y2],[...]] 形式）。"""
+    return (
+        a[0][0] <= b[0][0]
+        and a[0][1] <= b[0][1]
+        and a[2][0] >= b[2][0]
+        and a[2][1] >= b[2][1]
+    )
+
+
 class IgnoreArea(Tbpu):
     def __init__(self, areaList):
         self.tbpuName = "忽略区域"
         self.areaList = areaList
 
     def run(self, textBlocks):
-        # 返回是否矩形框 a 包含 b
-        def isInBox(a, b):
-            return (
-                a[0][0] <= b[0][0]
-                and a[0][1] <= b[0][1]
-                and a[2][0] >= b[2][0]
-                and a[2][1] >= b[2][1]
-            )
-
         newList = []
         for b in textBlocks:
             flag = True  # True 为没有被忽略

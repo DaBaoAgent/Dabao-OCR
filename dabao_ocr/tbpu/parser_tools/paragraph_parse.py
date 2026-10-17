@@ -4,26 +4,28 @@
 from typing import Callable
 import unicodedata
 
+# 中日韩字符集范围（模块级常量，避免每次调用都重建）
+_CJK_RANGES = (
+    (0x4E00, 0x9FFF),  # 中文
+    (0x3040, 0x30FF),  # 日文
+    (0x1100, 0x11FF),  # 韩文
+    (0x3130, 0x318F),  # 韩文兼容字母
+    (0xAC00, 0xD7AF),  # 韩文音节
+    (0x3000, 0x303F),  # 中文符号和标点
+    (0xFE30, 0xFE4F),  # 中文兼容形式标点
+    (0xFF00, 0xFFEF),  # 半角和全角形式字符
+)
+
+
+def _is_cjk(character) -> bool:
+    """判断 Unicode 字符是否属于中文、日文或韩文字符集。"""
+    code = ord(character)
+    return any(start <= code <= end for start, end in _CJK_RANGES)
+
 
 # 传入前句尾字符和后句首字符，返回分隔符
 def word_separator(letter1, letter2):
-
-    # 判断Unicode字符是否属于中文、日文或韩文字符集
-    def is_cjk(character):
-        cjk_unicode_ranges = [
-            (0x4E00, 0x9FFF),  # 中文
-            (0x3040, 0x30FF),  # 日文
-            (0x1100, 0x11FF),  # 韩文
-            (0x3130, 0x318F),  # 韩文兼容字母
-            (0xAC00, 0xD7AF),  # 韩文音节
-            # 全角符号
-            (0x3000, 0x303F),  # 中文符号和标点
-            (0xFE30, 0xFE4F),  # 中文兼容形式标点
-            (0xFF00, 0xFFEF),  # 半角和全角形式字符
-        ]
-        return any(start <= ord(character) <= end for start, end in cjk_unicode_ranges)
-
-    if is_cjk(letter1) and is_cjk(letter2):
+    if _is_cjk(letter1) and _is_cjk(letter2):
         return ""
 
     # 特殊情况：前文为连字符。

@@ -146,3 +146,40 @@ class TestResultModel:
         assert not r.ok and not r.empty
         assert r.error == "boom"
         assert r.blocks == []
+
+    def test_data_to_text_rejects_non_list(self):
+        """code=100 但 data 不是块列表时不能抛异常。"""
+        assert data_to_text("纯文本") == ""
+        assert data_to_text(None) == ""
+
+
+class TestRobustness:
+    def test_empty_blocks_survive_preprocessing(self):
+        """空结果集不能让 median([]) 把排版解析打崩。"""
+        from dabao_ocr.tbpu.parser_tools.line_preprocessing import linePreprocessing
+
+        assert linePreprocessing([]) == []
+        assert linePreprocessing([{"text": "", "box": [[0, 0], [1, 1], [1, 1], [0, 1]]}]) == []
+
+    def test_unknown_parser_rejected(self):
+        """parser 拼错必须报错，不能静默降级成 none。"""
+        from dabao_ocr.options import validate_options
+
+        with pytest.raises(ValueError):
+            validate_options({"tbpu.parser": "multi_par"})
+        validate_options({"tbpu.parser": "multi_para"})  # 合法值不抛
+
+    def test_parser_table_matches_registry(self):
+        """选项表与 tbpu.Parser 注册表不能漂移。"""
+        from dabao_ocr.options import PARSER_OPTIONS
+        from dabao_ocr.tbpu import PARSER_KEYS
+
+        assert set(k for k, _ in PARSER_OPTIONS) == set(PARSER_KEYS)
+
+    def test_fill_defaults_matches_option_table(self):
+        """静态默认值表必须与 get_options 的 default 一致。"""
+        from dabao_ocr.options import fill_defaults, get_options
+
+        table = get_options()
+        filled = fill_defaults({})
+        assert {k: filled[k] for k in table} == {k: m["default"] for k, m in table.items()}

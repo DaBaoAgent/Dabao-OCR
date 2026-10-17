@@ -71,3 +71,12 @@ class SingleCode(SingleLine):
         tbs = [self.merge_line(line) for line in lines]  # 合并所有行
         self.indent(tbs)  # 为每行添加句首缩进
         return tbs
+
+
+class SingleCodeFixed(SingleCode):
+    """单栏-保留缩进（修正版）：行高按两块真实高度取均值。"""
+
+    FIX_LINE_HEIGHT = True
+
+    def __init__(self):
+        self.tbpuName = "排版解析-单栏-代码段（修正）"

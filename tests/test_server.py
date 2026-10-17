@@ -45,6 +45,18 @@ def _b64(img):
     return base64.b64encode(open(img, "rb").read()).decode()
 
 
+class TestPathHeuristic:
+    def test_base64_is_not_a_path(self):
+        """base64 字母表含 '/'，不能因此被当成路径。"""
+        from dabao_ocr.server import _looks_like_path
+
+        b64 = _b64(IMG_ZH)[:4000]
+        assert "/" in b64  # 前提成立
+        assert _looks_like_path(b64) is False
+        assert _looks_like_path(IMG_ZH) is True
+        assert _looks_like_path("Z:/nope/missing.png") is True
+
+
 class TestCompatibility:
     def test_get_options(self, base_url):
         st, _, opts = _req(base_url + "/api/ocr/get_options")
@@ -145,6 +157,14 @@ class TestEnhanced:
         st, _, res = _req(base_url + "/api/ocr/batch", {"options": {}})
         assert res["code"] == 802
 
+    def test_batch_accepts_raw_base64_string(self, base_url):
+        """images 里直接给 base64 字符串时不能被误判成路径。"""
+        payload = {"images": [_b64(IMG_ZH)], "options": {"data.format": "text"}}
+        st, _, res = _req(base_url + "/api/ocr/batch", payload)
+        assert res["code"] == 100
+        assert res["data"][0]["code"] == 100
+        assert "系统" in res["data"][0]["data"]
+
     def test_pdf_text(self, base_url):
         payload = {"path": PDF_SAMPLE, "options": {"dpi": 150}}
         st, _, res = _req(base_url + "/api/pdf", payload)
@@ -161,6 +181,20 @@ class TestEnhanced:
     def test_pdf_missing_input(self, base_url):
         st, _, res = _req(base_url + "/api/pdf", {"options": {}})
         assert res["code"] == 802
+
+    def test_recognize_uses_service_fast_path(self, base_url, monkeypatch):
+        """CLI 快通道：recognize(use_service=True) 应走常驻服务且结果一致。"""
+        import dabao_ocr.service as svc
+        from dabao_ocr import recognize
+
+        monkeypatch.delenv("DABAO_OCR_NO_SERVICE", raising=False)
+        monkeypatch.setenv("DABAO_OCR_SERVICE_URL", base_url)
+        svc._probe_state = None  # 重置探活缓存
+        try:
+            r = recognize(IMG_ZH, use_service=True)
+            assert r.ok and "系统" in r.text
+        finally:
+            svc._probe_state = None
 
 
 class TestPortUtil:

@@ -8,9 +8,10 @@
 from pathlib import Path
 from typing import List, Union
 
-from .engine import OcrEngine, default_engine_dir, get_engine
+from .engine import OcrEngine, get_engine
 from .log import logger
-from .result import OcrResult, data_to_text
+from .result import OcrResult
+from .service import try_ocr
 from .tbpu import IgnoreArea, getParser
 
 # 可供识别的图片后缀（复刻 Umi-OCR 清单）
@@ -43,6 +44,35 @@ def _postprocess(blocks: List[dict], parser: str = None, ignore_area=None) -> Li
     return blocks
 
 
+def _service_options(language, angle, max_side_len, parser, ignore_area) -> dict:
+    """把 recognize 的参数翻译成 HTTP 选项表的键。"""
+    opts = {
+        "ocr.language": language,
+        "ocr.angle": bool(angle),
+        "ocr.maxSideLen": max_side_len,
+        "tbpu.parser": parser,
+        "data.format": "dict",
+    }
+    if ignore_area:
+        opts["tbpu.ignoreArea"] = ignore_area
+    return opts
+
+
+def _recognize_via_service(source, options, timeout):
+    """走常驻服务的快通道。服务不可用时返回 None（调用方回落本地引擎）。"""
+    if isinstance(source, bytes):
+        res = try_ocr(image_bytes=source, options=options, timeout=timeout)
+    else:
+        p = Path(source).resolve()
+        if not p.is_file():
+            return OcrResult(901, f"图片文件不存在：{p}")
+        res = try_ocr(path=p, options=options, timeout=timeout)
+    if res is None:
+        return None
+    # 服务端已完成 tbpu 排版解析，结果可直接使用（不要再解析一遍）
+    return OcrResult(res.get("code", 999), res.get("data", ""))
+
+
 def recognize(
     source: Union[str, Path, bytes],
     *,
@@ -55,6 +85,7 @@ def recognize(
     engine: OcrEngine = None,
     engine_dir=None,
     timeout: float = None,
+    use_service: bool = False,
 ) -> OcrResult:
     """识别一张图片。
 
@@ -66,7 +97,15 @@ def recognize(
     :param parser: 排版解析方案（none/multi_para/multi_line/... 共 8 种）
     :param ignore_area: 忽略区域 [[[x1,y1],[x2,y2]], ...]（像素坐标）
     :param engine: 直接指定引擎实例（复用/测试用，优先级最高）
+    :param use_service: 优先复用本机常驻 HTTP 服务（省掉引擎冷启动）；
+                        服务不可用时自动回落本地引擎
     """
+    if use_service and engine is None and engine_dir is None:
+        opts = _service_options(language, angle, max_side_len, parser, ignore_area)
+        fast = _recognize_via_service(source, opts, timeout)
+        if fast is not None:
+            return fast
+
     eng = engine or get_engine(
         {
             "language": language,
@@ -93,10 +132,22 @@ def recognize_base64(
     parser: str = DEFAULT_PARSER,
     ignore_area=None,
     engine: OcrEngine = None,
+    use_service: bool = False,
     **engine_opts,
 ) -> OcrResult:
     """识别一张 base64 编码的图片（engine_opts 同 recognize）。"""
     engine_dir = engine_opts.pop("engine_dir", None)
+    if use_service and engine is None and engine_dir is None:
+        opts = _service_options(
+            engine_opts.get("language", "简体中文"),
+            engine_opts.get("angle", False),
+            engine_opts.get("max_side_len", 1024),
+            parser,
+            ignore_area,
+        )
+        res = try_ocr(image_base64=image_base64, options=opts)
+        if res is not None:
+            return OcrResult(res.get("code", 999), res.get("data", ""))
     eng = engine or get_engine(engine_opts, engine_dir)
     res = eng.run_base64(image_base64)
     return _finish(res, parser, ignore_area)

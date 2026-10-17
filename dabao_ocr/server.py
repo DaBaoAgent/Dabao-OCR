@@ -17,29 +17,21 @@
 """
 
 import json
+import os
+import re
 import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from . import _version
-from .engine import (CODE_NO_TEXT, OcrEngineError, clear_engines, get_engine,
-                     list_languages)
+from ._version import __version__
+from .engine import OcrEngineError, clear_engines, list_languages
 from .log import logger
-from .ocr import recognize
+from .ocr import IMAGE_SUFFIXES, recognize
 from .options import fill_defaults, get_options, validate_options
-from .result import OcrResult
-
-__version__ = _version.__version__
 
 SERVER_NAME = "DabaoOCR"
-
-
-def _result_to_response(result: OcrResult, data_format: str = "dict") -> dict:
-    if data_format == "text":
-        return result.to_text_dict()
-    return result.to_dict()
 
 
 def _run_ocr(payload: dict, engine_dir=None) -> dict:
@@ -57,8 +49,6 @@ def _run_ocr(payload: dict, engine_dir=None) -> dict:
     try:
         opt = fill_defaults(raw_options, engine_dir)
         validate_options(opt, engine_dir)
-    except ValueError as e:
-        return {"code": 804, "data": f"options 解释失败。 {e}"}
     except Exception as e:
         return {"code": 804, "data": f"options 解释失败。 {e}"}
 
@@ -86,42 +76,52 @@ def _run_ocr(payload: dict, engine_dir=None) -> dict:
     except Exception as e:
         logger.exception("OCR 执行失败")
         return {"code": 900, "data": f"OCR 执行失败：{e}"}
-    return _result_to_response(result, opt.get("data.format", "dict"))
+    if opt.get("data.format", "dict") == "text":
+        return result.to_text_dict()
+    return result.to_dict()
 
 
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = f"{SERVER_NAME}/{__version__}"
-    # 由 server 实例注入
-    engine_dir = None
     max_body = 128 * 1024 * 1024  # 128 MB 请求上限
 
     # -------------------------------------------------- 基础设施
     def log_message(self, fmt, *args):
         logger.info("%s - %s", self.address_string(), fmt % args)
 
+    @property
+    def engine_dir(self):
+        """引擎目录挂在 server 实例上，避免用类属性造成跨实例串味。"""
+        return getattr(self.server, "engine_dir", None)
+
     def _cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 
+    def _write(self, body: bytes, status: int, ctype: str):
+        """统一的响应写出：客户端提前断连时静默丢弃，不刷 traceback。"""
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self._cors_headers()
+            self.end_headers()
+            self.wfile.write(body)
+        except (ConnectionError, OSError):
+            # agent 超时重试 / curl 中断 / 浏览器刷新都会走到这里
+            self.close_connection = True
+
     def _send_json(self, obj, status=200):
-        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self._cors_headers()
-        self.end_headers()
-        self.wfile.write(body)
+        self._write(
+            json.dumps(obj, ensure_ascii=False).encode("utf-8"),
+            status,
+            "application/json; charset=utf-8",
+        )
 
     def _send_text(self, text, status=200, ctype="text/plain; charset=utf-8"):
-        body = text.encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self._cors_headers()
-        self.end_headers()
-        self.wfile.write(body)
+        self._write(text.encode("utf-8"), status, ctype)
 
     def _read_json(self):
         """读请求体并解析 JSON。返回 (data, error_response|None)。"""
@@ -272,7 +272,19 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def _looks_like_path(s: str) -> bool:
-    return ("\\" in s or "/" in s) and len(s) < 4096
+    """判断字符串是本机路径，而不是 base64 数据。
+
+    旧判据「含 / 或 \\ 且长度 < 4096」不可靠：base64 字母表本身包含 '/'，
+    几 KB 小图的 base64 几乎必然含 '/'，会被误判成路径。
+    """
+    if "\n" in s or len(s) > 4096:
+        return False
+    if os.path.exists(s):
+        return True
+    return bool(_WIN_ABS_RE.match(s)) or s.lower().endswith(IMAGE_SUFFIXES)
+
+
+_WIN_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
 
 class DabaoOcrServer(ThreadingHTTPServer):
@@ -280,7 +292,6 @@ class DabaoOcrServer(ThreadingHTTPServer):
 
     def __init__(self, host, port, engine_dir=None):
         super().__init__((host, port), _Handler)
-        _Handler.engine_dir = engine_dir
         self.engine_dir = engine_dir
         self.started_at = time.time()
 

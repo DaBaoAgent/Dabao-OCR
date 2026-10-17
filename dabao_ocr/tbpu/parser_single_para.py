@@ -6,6 +6,10 @@ from .parser_tools.paragraph_parse import ParagraphParse  # 段内分析器
 
 
 class SinglePara(SingleLine):
+    # 是否修正行包围盒的合并。原版在合并时用刚被更新的 b1 去算 b2/b3，
+    # 导致右/下边界偏小。默认沿用原逻辑以保持一致性；修正版见 SingleParaFixed。
+    FIX_LINE_BBOX = False
+
     def __init__(self):
         self.tbpuName = "排版解析-单栏-自然段"
 
@@ -28,8 +32,13 @@ class SinglePara(SingleLine):
             for i in range(1, len(line)):
                 bb = line[i]["normalized_bbox"]
                 b1 = min(b1, bb[1])
-                b2 = max(b1, bb[2])
-                b3 = max(b1, bb[3])
+                if self.FIX_LINE_BBOX:
+                    b2 = max(b2, bb[2])
+                    b3 = max(b3, bb[3])
+                else:
+                    # 原版公式（缺陷）：b2/b3 用了刚更新的 b1
+                    b2 = max(b1, bb[2])
+                    b3 = max(b1, bb[3])
             # 构建tb
             temp_tbs.append(
                 {
@@ -47,3 +56,14 @@ class SinglePara(SingleLine):
                 del tb["normalized_bbox"]
                 textBlocks.append(tb)
         return textBlocks
+
+
+class SingleParaFixed(SinglePara):
+    """单栏-自然段（修正版）：同时修正行高公式与行包围盒合并。"""
+
+    FIX_LINE_HEIGHT = True
+    FIX_LINE_BBOX = True
+
+    def __init__(self):
+        super().__init__()
+        self.tbpuName = "排版解析-单栏-自然段（修正）"

@@ -19,6 +19,11 @@ PARSER_OPTIONS = [
     ["single_none", "单栏-无换行"],
     ["single_code", "单栏-保留缩进"],
     ["none", "不做处理"],
+    # 修正版：只修正原版 single_* 的行高/包围盒计算缺陷（原 8 种保持不变）
+    ["single_para_fixed", "单栏-自然段（修正版）"],
+    ["single_line_fixed", "单栏-总是换行（修正版）"],
+    ["single_none_fixed", "单栏-无换行（修正版）"],
+    ["single_code_fixed", "单栏-保留缩进（修正版）"],
 ]
 
 MAX_SIDE_OPTIONS = [
@@ -27,6 +32,19 @@ MAX_SIDE_OPTIONS = [
     [4096, "4096"],
     [999999, "无限制"],
 ]
+
+# 合法方案名（顺序与选项表一致，供校验用；与 tbpu.Parser 的一致性由测试保证）
+PARSER_KEYS_ORDERED = [k for k, _ in PARSER_OPTIONS]
+
+# 默认值表（与 get_options 的 "default" 保持一致，由测试保证不漂移）
+_DEFAULTS = {
+    "ocr.language": DEFAULT_LANGUAGE,
+    "ocr.angle": False,
+    "ocr.maxSideLen": 1024,
+    "tbpu.parser": "multi_para",
+    "tbpu.ignoreArea": [],
+    "data.format": "dict",
+}
 
 
 def get_options(engine_dir=None) -> dict:
@@ -87,17 +105,25 @@ def get_options(engine_dir=None) -> dict:
 
 
 def fill_defaults(options: dict, engine_dir=None) -> dict:
-    """补全缺失的默认参数（返回新字典）。"""
+    """补全缺失的默认参数（返回新字典）。
+
+    直接用静态默认值表，不再为了 6 个默认值去构建整张带文案的选项表
+    （旧实现每次请求都会重新拼一遍中文标题）。与 get_options 的一致性由测试保证。
+    """
     opt = dict(options or {})
-    defaults = get_options(engine_dir)
-    for key, meta in defaults.items():
+    for key, val in _DEFAULTS.items():
         if key not in opt:
-            opt[key] = meta["default"]
+            opt[key] = list(val) if isinstance(val, list) else val
     return opt
 
 
 def validate_options(options: dict, engine_dir=None):
     """校验选项（复刻 Umi-OCR 的检查，含错误消息）。抛 ValueError。"""
+    parser = options.get("tbpu.parser", "multi_para")
+    if parser not in PARSER_KEYS_ORDERED:
+        raise ValueError(
+            f"未知排版解析方案：{parser!r}；可用：{PARSER_KEYS_ORDERED}"
+        )
     ia = options.get("tbpu.ignoreArea")
     if ia:
         if not isinstance(ia, list):

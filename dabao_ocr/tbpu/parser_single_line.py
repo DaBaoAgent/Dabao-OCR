@@ -6,6 +6,11 @@ from .parser_tools.paragraph_parse import word_separator  # 上下句间隔符
 
 
 class SingleLine(Tbpu):
+    # 是否修正行高公式。原版公式把左边界 l2 混进了高度计算
+    # （h 可能变成很大的负数，导致"间隙过大"恒成立、强行插入空格）。
+    # 为保持与原版逐块一致，默认沿用原公式；修正版见 SingleLineFixed。
+    FIX_LINE_HEIGHT = False
+
     def __init__(self):
         self.tbpuName = "排版解析-单栏-单行"
 
@@ -47,7 +52,11 @@ class SingleLine(Tbpu):
                 # 检查同一行内相邻文本块的水平间隙
                 l1, t1, r1, b1 = now_line[i2]["normalized_bbox"]
                 l2, t2, r2, b2 = now_line[i2 + 1]["normalized_bbox"]
-                h = (b1 + b2 - t1 - l2) * 0.5
+                if self.FIX_LINE_HEIGHT:
+                    h = ((b1 - t1) + (b2 - t2)) * 0.5  # 两块行高的均值（修正）
+                else:
+                    # 原版公式（缺陷）：用 l2 代替 t2，把 x 坐标混进了高度
+                    h = (b1 + b2 - t1 - l2) * 0.5
                 if l2 - r1 > h * 1.5:  # 间隙太大，强制设置空格
                     now_line[i2]["end"] = " "
                     continue
@@ -71,3 +80,16 @@ class SingleLine(Tbpu):
                 del tb["normalized_bbox"]
                 textBlocks.append(tb)
         return textBlocks
+
+
+class SingleLineFixed(SingleLine):
+    """单栏-总是换行（修正版）：行高按两块真实高度取均值。
+
+    与原版的唯一差异：修正了行高公式中误用左边界 l2 的缺陷，
+    避免同一行相邻小块被误判为"间隙过大"而插入多余空格。
+    """
+
+    FIX_LINE_HEIGHT = True
+
+    def __init__(self):
+        self.tbpuName = "排版解析-单栏-单行（修正）"

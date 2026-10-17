@@ -13,6 +13,10 @@ venv/
 # 测试缓存
 .pytest_cache/
 .coverage
+.pytest-tmp/
+
+# 工具工作区（记忆、审查报告等本地数据，不入库）
+.workbuddy-ai/
 
 # 服务日志
 logs/

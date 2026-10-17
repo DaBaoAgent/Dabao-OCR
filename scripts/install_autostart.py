@@ -9,6 +9,7 @@
   .venv\\Scripts\\python.exe scripts\\install_autostart.py            # 安装
   .venv\\Scripts\\python.exe scripts\\install_autostart.py --uninstall # 卸载
   .venv\\Scripts\\python.exe scripts\\install_autostart.py --status    # 查看状态
+  .venv\\Scripts\\python.exe scripts\\install_autostart.py --stop      # 停止运行中的服务
 """
 
 import os
@@ -45,12 +46,52 @@ def _vbs_content() -> str:
     )
 
 
-def _run_schtasks(args: list) -> tuple:
-    """调用 schtasks；中文 Windows 输出为 GBK，手动解码。"""
-    r = subprocess.run(["schtasks", *args], capture_output=True, timeout=30)
+def _run(cmd: list, timeout: int = 30) -> tuple:
+    """运行命令并按 GBK 解码输出（中文 Windows 控制台编码）。"""
+    r = subprocess.run(cmd, capture_output=True, timeout=timeout)
     out = (r.stdout or b"").decode("gbk", errors="replace")
     err = (r.stderr or b"").decode("gbk", errors="replace")
     return r.returncode, out, err
+
+
+def _run_schtasks(args: list) -> tuple:
+    """调用 schtasks；中文 Windows 输出为 GBK，手动解码。"""
+    return _run(["schtasks", *args])
+
+
+def find_pid_on_port(port: int = PORT):
+    """找出监听指定端口的进程 PID；没有则返回 None。"""
+    code, out, _ = _run(["netstat", "-ano"])
+    if code != 0:
+        return None
+    for line in out.splitlines():
+        parts = line.split()
+        # 只认 LISTENING 行，避免把连到该端口的 ESTABLISHED 连接当成监听者
+        if len(parts) >= 5 and parts[0].upper() == "TCP" and parts[3].upper() == "LISTENING":
+            if parts[1].endswith(f":{port}"):
+                try:
+                    return int(parts[4])
+                except ValueError:
+                    return None
+    return None
+
+
+def stop_server() -> int:
+    """停止监听端口的服务进程。
+
+    按 PID 精确杀，不要用 `taskkill /IM pythonw.exe` —— 那会连带杀掉
+    本机其他无关的 pythonw 进程。
+    """
+    pid = find_pid_on_port()
+    if pid is None:
+        print(f"[i] 端口 {PORT} 无监听进程，服务未运行")
+        return 0
+    code, out, err = _run(["taskkill", "/F", "/PID", str(pid)])
+    if code == 0:
+        print(f"[OK] 已停止服务进程（PID {pid}）")
+        return 0
+    print(f"[FAIL] 停止失败（PID {pid}）: {out.strip()} {err.strip()}")
+    return 1
 
 
 def task_exists() -> bool:
@@ -109,7 +150,8 @@ def uninstall():
             print(f"[FAIL] 删除任务失败: {out.strip()} {err.strip()}")
     else:
         print("[i] 计划任务不存在，跳过")
-    print("[i] 服务进程如需停止：taskkill /F /IM pythonw.exe（注意可能误杀其他 pythonw）")
+    # 3. 停掉还在跑的服务（按端口定位，不会误杀其他 python 进程）
+    stop_server()
     return 0
 
 
@@ -141,4 +183,6 @@ if __name__ == "__main__":
         sys.exit(uninstall())
     if "--status" in sys.argv:
         sys.exit(status())
+    if "--stop" in sys.argv:
+        sys.exit(stop_server())
     sys.exit(install())

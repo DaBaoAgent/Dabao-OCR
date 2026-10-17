@@ -16,8 +16,9 @@ import sys
 from pathlib import Path
 
 from ._version import __version__
-from .engine import clear_engines, default_engine_dir, get_engine
+from .engine import clear_engines, default_engine_dir
 from .ocr import IMAGE_SUFFIXES, recognize
+from .options import PARSER_KEYS_ORDERED
 from .result import OcrResult
 
 
@@ -31,9 +32,9 @@ def _force_utf8():
 
 def _add_common_ocr_args(p: argparse.ArgumentParser):
     p.add_argument("--language", default="简体中文", help="语言/模型库（默认 简体中文）")
-    p.add_argument("--parser", default="multi_para",
-                   help="排版解析方案：multi_para/multi_line/multi_none/single_para/"
-                        "single_line/single_none/single_code/none")
+    p.add_argument("--parser", default="multi_para", choices=PARSER_KEYS_ORDERED,
+                   help="排版解析方案：8 种原版（multi_*/single_*/none）+ "
+                        "4 种 single_*_fixed 修正版；可选值见下方 choices")
     p.add_argument("--angle", action="store_true", help="启用文本方向纠正（慢一些）")
     p.add_argument("--max-side", type=int, default=1024, dest="max_side",
                    help="图像长边压缩上限（默认 1024，越小越快）")
@@ -54,14 +55,11 @@ def _parse_ignore_area(s):
 
 
 def _recognize_source(src: str, args) -> OcrResult:
-    if src == "-":
-        data = sys.stdin.buffer.read()
-        return recognize(data, language=args.language, angle=args.angle,
-                         max_side_len=args.max_side, parser=args.parser,
-                         ignore_area=_parse_ignore_area(args.ignore_area))
-    return recognize(src, language=args.language, angle=args.angle,
+    source = sys.stdin.buffer.read() if src == "-" else src
+    return recognize(source, language=args.language, angle=args.angle,
                      max_side_len=args.max_side, parser=args.parser,
-                     ignore_area=_parse_ignore_area(args.ignore_area))
+                     ignore_area=_parse_ignore_area(args.ignore_area),
+                     use_service=not args.no_service)
 
 
 # ------------------------------------------------------------------ ocr
@@ -113,7 +111,8 @@ def cmd_batch(args):
     results = []
     for f in files:
         r = recognize(f, language=args.language, angle=args.angle,
-                      max_side_len=args.max_side, parser=args.parser)
+                      max_side_len=args.max_side, parser=args.parser,
+                      use_service=not args.no_service)
         results.append({"name": f.name, "path": str(f), "result": r})
         if args.verbose:
             status = "OK" if r.ok else ("EMPTY" if r.empty else f"ERR{r.code}")
@@ -237,6 +236,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_ocr.add_argument("--format", choices=["text", "json", "jsonl"], default="text",
                        help="输出格式（默认 text）")
     p_ocr.add_argument("-o", "--output", help="写入文件")
+    p_ocr.add_argument("--no-service", action="store_true",
+                       help="不使用本机常驻服务，强制本地拉起引擎")
     _add_common_ocr_args(p_ocr)
     p_ocr.set_defaults(func=cmd_ocr)
 
@@ -248,6 +249,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_batch.add_argument("--format", choices=["txt", "json", "jsonl", "md", "csv"],
                          default="jsonl", help="导出格式（配合 --out-dir）")
     p_batch.add_argument("-v", "--verbose", action="store_true")
+    p_batch.add_argument("--no-service", action="store_true",
+                         help="不使用本机常驻服务，强制本地拉起引擎")
     _add_common_ocr_args(p_batch)
     p_batch.set_defaults(func=cmd_batch)
 

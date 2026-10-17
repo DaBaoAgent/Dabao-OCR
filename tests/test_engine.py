@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """引擎层测试：启动、识别、错误路径、缓存复用。"""
 
-import os
 import time
 
 import pytest
@@ -9,7 +8,7 @@ import pytest
 from dabao_ocr.engine import (OcrEngine, OcrEngineError, clear_engines,
                               default_engine_dir, get_engine,
                               normalize_options)
-from tests.conftest import IMG_ZH
+from tests.conftest import IMG_ZH, ROOT
 
 
 class TestEngineLifecycle:
@@ -67,6 +66,57 @@ class TestEngineLifecycle:
         assert res["code"] == 100
         assert eng.alive
         eng.stop()
+
+    def test_run_path_relative(self, monkeypatch):
+        """相对路径必须能识别：引擎子进程 cwd 在引擎目录，不能直接透传。"""
+        monkeypatch.chdir(ROOT)
+        eng = OcrEngine()
+        eng.start()
+        try:
+            res = eng.run_path("tests/assets/info_panel.png")
+            assert res["code"] == 100
+        finally:
+            eng.stop()
+
+    def test_stop_releases_process_and_pipes(self):
+        """stop() 要 wait() 回收句柄并关闭管道，避免长跑泄漏。"""
+        eng = OcrEngine()
+        eng.start()
+        proc = eng._proc
+        eng.stop()
+        assert proc.returncode is not None
+        assert proc.stdin.closed and proc.stdout.closed
+        assert not eng.alive
+
+    def test_engine_bound_to_kill_on_close_job(self):
+        """引擎必须加入 KILL_ON_JOB_CLOSE 的 Job，否则父进程被强杀会留孤儿进程。"""
+        import ctypes
+        import sys
+        from ctypes import wintypes
+
+        from dabao_ocr import engine as E
+
+        if not sys.platform.startswith("win"):
+            pytest.skip("Job Object 仅 Windows")
+
+        eng = E.OcrEngine()
+        eng.start()
+        try:
+            job = E._create_kill_on_close_job()
+            assert job, "KILL_ON_JOB_CLOSE Job 应创建成功"
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.IsProcessInJob.argtypes = [
+                wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)
+            ]
+            in_job = wintypes.BOOL()
+            ok = k32.IsProcessInJob(
+                wintypes.HANDLE(int(eng._proc._handle)),
+                wintypes.HANDLE(job),
+                ctypes.byref(in_job),
+            )
+            assert ok and in_job.value, "引擎进程必须已在 Job 内"
+        finally:
+            eng.stop()
 
 
 class TestNormalizeOptions:

@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
 """pytest 公共配置：项目根目录注入 sys.path、资产路径、引擎清理。"""
 
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+# 测试必须自洽：禁止走本机常驻服务（否则结果取决于外部进程是否在跑）
+os.environ["DABAO_OCR_NO_SERVICE"] = "1"
 
 import pytest  # noqa: E402
 

@@ -8,6 +8,7 @@
 - 线程安全：读写分离（读线程 + 队列），请求串行化（锁）
 - 超时保护、崩溃自动重启 + 一次重试
 - 不同参数组合的引擎实例按 LRU 缓存复用（默认上限 2 个）
+- Windows 下用 Job Object 绑定：父进程被强杀时引擎一并退出，不留孤儿进程
 """
 
 import atexit
@@ -29,14 +30,124 @@ from .log import logger
 DEFAULT_TIMEOUT = float(os.environ.get("DABAO_OCR_TIMEOUT", "180"))
 # 引擎实例缓存上限（每实例 = 一个常驻进程，吃一份模型内存）
 MAX_CACHED_ENGINES = int(os.environ.get("DABAO_OCR_MAX_ENGINES", "2"))
+# 引擎线程数覆盖（默认按 CPU 核心数；实测 16 核上 16 线程比 4 线程还快约 10%，
+# 故不默认封顶。希望后台服务少占核心时，设 DABAO_OCR_NUM_THREAD=4 即可）
+ENV_NUM_THREAD = os.environ.get("DABAO_OCR_NUM_THREAD")
 
 # 引擎成功 / 无文字 返回码（与 RapidOCR-json 协议一致）
 CODE_SUCCESS = 100
 CODE_NO_TEXT = 101
 
+# ---------------------------------------------------------------- Job Object
+# 目的：服务进程被 taskkill /F 或崩溃时，RapidOCR-json.exe 不会变成孤儿进程
+# 继续占着 ~275MB 内存。把引擎加入一个带 KILL_ON_JOB_CLOSE 的 Job，
+# 父进程无论怎么退出（含 TerminateProcess），句柄一关引擎就被系统杀掉。
+_JOB_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+_JobObjectExtendedLimitInformation = 9
+_job_handle = None
+_job_ready = False
+
+
+def _create_kill_on_close_job():
+    """创建（并缓存）一个进程退出即杀子进程的 Job。失败返回 None，不影响主流程。"""
+    global _job_handle, _job_ready
+    if _job_ready:
+        return _job_handle
+    _job_ready = True
+    if not sys.platform.startswith("win"):
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _BasicLimit(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_int64),
+                ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", ctypes.c_uint32),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", ctypes.c_uint32),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", ctypes.c_uint32),
+                ("SchedulingClass", ctypes.c_uint32),
+            ]
+
+        class _IoCounters(ctypes.Structure):
+            _fields_ = [
+                ("ReadOperationCount", ctypes.c_uint64),
+                ("WriteOperationCount", ctypes.c_uint64),
+                ("OtherOperationCount", ctypes.c_uint64),
+                ("ReadTransferCount", ctypes.c_uint64),
+                ("WriteTransferCount", ctypes.c_uint64),
+                ("OtherTransferCount", ctypes.c_uint64),
+            ]
+
+        class _ExtendedLimit(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", _BasicLimit),
+                ("IoInfo", _IoCounters),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        handle = kernel32.CreateJobObjectW(None, None)
+        if not handle:
+            raise OSError(ctypes.get_last_error(), "CreateJobObjectW 失败")
+        info = _ExtendedLimit()
+        info.BasicLimitInformation.LimitFlags = _JOB_LIMIT_KILL_ON_JOB_CLOSE
+        ok = kernel32.SetInformationJobObject(
+            wintypes.HANDLE(handle),
+            _JobObjectExtendedLimitInformation,
+            ctypes.byref(info),
+            ctypes.sizeof(info),
+        )
+        if not ok:
+            kernel32.CloseHandle(wintypes.HANDLE(handle))
+            raise OSError(ctypes.get_last_error(), "SetInformationJobObject 失败")
+        _job_handle = handle
+        logger.debug("已创建 KILL_ON_JOB_CLOSE Job：%s", handle)
+    except Exception as e:  # ctypes 不可用 / 权限受限：降级为不绑定
+        logger.debug("创建 Job Object 失败（引擎将不随父进程退出）：%s", e)
+    return _job_handle
+
+
+def _bind_process_to_job(proc):
+    """把刚启动的引擎进程加入 Job。失败只记 debug，不影响识别。"""
+    job = _create_kill_on_close_job()
+    if not job:
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+        if not kernel32.AssignProcessToJobObject(
+            wintypes.HANDLE(job), wintypes.HANDLE(int(proc._handle))
+        ):
+            logger.debug(
+                "引擎加入 Job 失败（code=%s），不影响识别",
+                ctypes.get_last_error(),
+            )
+    except Exception as e:
+        logger.debug("引擎加入 Job 异常：%s", e)
+
 
 class OcrEngineError(RuntimeError):
     """引擎运行错误（启动失败 / 崩溃 / 超时）"""
+
+
+class OcrEngineTimeout(OcrEngineError):
+    """引擎响应超时。
+
+    与崩溃区分开：崩溃重启后重试有意义，超时重试只会再等一个 timeout。
+    """
 
 
 def default_engine_dir() -> Path:
@@ -80,7 +191,12 @@ def normalize_options(options: dict = None, engine_dir=None) -> dict:
     msl = o.get("maxSideLen", o.get("max_side_len"))
     res["maxSideLen"] = int(msl) if msl else 1024
     nt = o.get("numThread", o.get("num_thread"))
-    res["numThread"] = int(nt) if nt else (os.cpu_count() or 4)
+    if nt:
+        res["numThread"] = int(nt)
+    elif ENV_NUM_THREAD:
+        res["numThread"] = int(ENV_NUM_THREAD)
+    else:
+        res["numThread"] = os.cpu_count() or 4
     return res
 
 
@@ -100,7 +216,6 @@ class OcrEngine:
         self._proc = None
         self._q = None
         self._lock = threading.RLock()
-        self._exit_hooked = False
 
     # ------------------------------------------------------------------ 命令
     def _build_command(self) -> list:
@@ -130,21 +245,18 @@ class OcrEngine:
             self.stop()
             cmd = self._build_command()
             logger.debug("启动引擎：%s", " ".join(cmd))
-            startupinfo = None
-            if sys.platform.startswith("win"):
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags = (
-                    subprocess.CREATE_NEW_CONSOLE | subprocess.STARTF_USESHOWWINDOW
-                )
-                startupinfo.wShowWindow = subprocess.SW_HIDE
+            # CREATE_NO_WINDOW：不分配控制台（stdin/stdout 已走管道），
+            # 比 CREATE_NEW_CONSOLE + SW_HIDE 更干净，也不会有窗口闪烁
+            creationflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
             self._proc = subprocess.Popen(
                 cmd,
                 cwd=str(self.dir),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
-                startupinfo=startupinfo,
+                creationflags=creationflags,
             )
+            _bind_process_to_job(self._proc)  # 父进程被强杀时引擎不会留成孤儿
             self._q = queue.Queue()
             threading.Thread(
                 target=self._read_loop,
@@ -174,19 +286,29 @@ class OcrEngine:
                 line = raw.decode("utf-8", errors="ignore")
                 if "OCR init completed." in line:
                     break
-            if not self._exit_hooked:
-                atexit.register(self.stop)
-                self._exit_hooked = True
             logger.info("引擎就绪：%s", self.exe.name)
 
     def stop(self):
-        """停止引擎子进程（幂等）。"""
+        """停止引擎子进程（幂等），并回收进程句柄与管道。"""
         with self._lock:
             proc, self._proc = self._proc, None
             self._q = None
-            if proc is not None and proc.poll() is None:
-                try:
+            if proc is None:
+                return
+            dead = False
+            try:
+                if proc.poll() is None:
                     proc.kill()
+                proc.wait(timeout=5)  # 回收进程句柄，避免僵尸
+                dead = True
+            except Exception:
+                pass
+            if not dead:
+                return  # 进程没死透，贸然关管道可能阻塞读线程
+            for stream in (proc.stdin, proc.stdout):
+                try:
+                    if stream is not None:
+                        stream.close()
                 except Exception:
                     pass
 
@@ -221,7 +343,9 @@ class OcrEngine:
             remain = deadline - time.monotonic()
             if remain <= 0:
                 self.stop()
-                raise OcrEngineError("引擎响应超时（已终止引擎，下次请求自动重启）。")
+                raise OcrEngineTimeout(
+                    "引擎响应超时（已终止引擎，下次请求自动重启）。"
+                )
             try:
                 raw = self._q.get(timeout=min(remain, 0.5))
             except queue.Empty:
@@ -243,6 +367,9 @@ class OcrEngine:
         with self._lock:
             try:
                 return self._request(payload)
+            except OcrEngineTimeout:
+                # 超时多半是这张图啃不动，重试只会再等一个 timeout（默认 180s）
+                raise
             except OcrEngineError as e:
                 logger.warning("引擎请求失败，重启后重试一次：%s", e)
                 self.stop()
@@ -251,8 +378,15 @@ class OcrEngine:
 
     # ------------------------------------------------------------------ 公开 API
     def run_path(self, image_path) -> dict:
-        """识别本地图片路径。返回引擎原始响应 {"code": int, "data": list|str}。"""
-        return self._run_with_retry({"image_path": str(image_path)})
+        """识别本地图片路径。返回引擎原始响应 {"code": int, "data": list|str}。
+
+        相对路径按调用方 cwd 解析：引擎子进程的 cwd 在引擎目录，
+        直接透传相对路径会让引擎找不到文件（返回 code 200）。
+        """
+        p = Path(image_path)
+        if not p.is_absolute():
+            p = p.resolve()
+        return self._run_with_retry({"image_path": str(p)})
 
     def run_base64(self, image_base64: str) -> dict:
         """识别 base64 图片。"""
@@ -317,6 +451,12 @@ def clear_engines():
         for eng in _cache.values():
             eng.stop()
         _cache.clear()
+
+
+# 进程退出时统一回收。只注册一次，且不绑定实例：
+# 若按实例 atexit.register(self.stop)，绑定方法会强引用 self，
+# 导致 LRU 淘汰掉的引擎实例直到进程退出都无法被 GC。
+atexit.register(clear_engines)
 
 
 def list_languages(engine_dir=None) -> dict:

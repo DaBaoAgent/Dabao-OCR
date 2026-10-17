@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """OCR 结果类型与文本拼接"""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from functools import cached_property
 from typing import List, Union
 
 
@@ -11,12 +12,13 @@ def data_to_text(blocks: List[dict]) -> str:
     每个文本块需含 'text' 与 'end'（排版解析会写入 'end'；
     未经解析的块按换行处理）。
     """
-    out = ""
-    for i, tb in enumerate(blocks):
-        out += tb.get("text", "")
-        if i < len(blocks) - 1:
-            out += tb.get("end", "\n")
-    return out
+    if not isinstance(blocks, list):  # 防御：code=100 但 data 不是块列表
+        return ""
+    last = len(blocks) - 1
+    return "".join(
+        tb.get("text", "") + (tb.get("end", "\n") if i < last else "")
+        for i, tb in enumerate(blocks)
+    )
 
 
 @dataclass
@@ -43,9 +45,9 @@ class OcrResult:
     def blocks(self) -> List[dict]:
         return self.data if isinstance(self.data, list) else []
 
-    @property
+    @cached_property
     def text(self) -> str:
-        """拼接后的纯文本（无文字时为空字符串）。"""
+        """拼接后的纯文本（无文字时为空字符串）。只拼接一次，重复访问走缓存。"""
         if self.code == 100:
             return data_to_text(self.data)
         return ""

@@ -7,12 +7,12 @@ name = "dabao-ocr"
 description = "离线 OCR 后端 —— Umi-OCR 衍生的 agent 友好工具包（RapidOCR-json 引擎）"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Dabao (Xiaobao) Company" }]
 keywords = ["ocr", "offline", "rapidocr", "umi-ocr", "agent", "chinese"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",
     "Topic :: Text Processing",
 ]
@@ -26,12 +26,11 @@ dev = ["pytest>=8", "PyMuPDF>=1.24"]
 [project.scripts]
 dabao-ocr = "dabao_ocr.cli:main"
 
-[tool.setuptools]
-packages = [
-    "dabao_ocr",
-    "dabao_ocr.tbpu",
-    "dabao_ocr.tbpu.parser_tools",
-]
+[tool.setuptools.packages.find]
+include = ["dabao_ocr*"]
+
+[tool.setuptools.package-data]
+dabao_ocr = ["py.typed"]
 
 [tool.setuptools.dynamic]
 version = { attr = "dabao_ocr._version.__version__" }
@@ -39,3 +38,12 @@ version = { attr = "dabao_ocr._version.__version__" }
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+# 只开高价值规则：F=未使用/未定义，E9=语法，B=易错写法，UP=过时语法
+select = ["F", "E9", "B", "UP"]
+ignore = ["UP006", "UP007", "UP035", "B008"]

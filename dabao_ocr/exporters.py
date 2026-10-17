@@ -49,7 +49,9 @@ def write_md_file(path, sections: list, start_datetime: str = ""):
 
 def write_csv_file(path, rows: list):
     """写 CSV（表头 Name/OCR/Path；编码按内容自动降级，复刻 Umi-OCR 逻辑）。"""
-    all_text = "".join(str(r[1]) for r in rows)
+    # 注意要覆盖所有列：只测 OCR 文本列的话，纯 ASCII 文本会选中 ascii 编码，
+    # 而含中文的文件名写第一列时就会抛 UnicodeEncodeError。
+    all_text = "".join(str(cell) for row in rows for cell in row)
     encoding = "utf-8"
     for e in _CSV_ENCODINGS:
         try:
@@ -59,7 +61,7 @@ def write_csv_file(path, rows: list):
         except Exception:
             continue
     logger.debug("csv encoding: %s", encoding)
-    with open(path, "w", encoding=encoding, newline="") as f:
+    with open(path, "w", encoding=encoding, newline="", errors="replace") as f:
         writer = csv.writer(f)
         writer.writerow(["Name", "OCR", "Path"])
         for row in rows:
@@ -85,13 +87,13 @@ def export(
     """
     os.makedirs(out_dir, exist_ok=True)
     if fmt == "txt":
-        text = ""
+        parts = []
         for r in results:
             t = r["result"].text
             if t and not t.endswith("\n"):
                 t += "\n"
-            text += t
-        write_text_file(os.path.join(out_dir, base_name + ".txt"), text)
+            parts.append(t)
+        write_text_file(os.path.join(out_dir, base_name + ".txt"), "".join(parts))
     elif fmt == "json":
         write_json_file(
             os.path.join(out_dir, base_name + ".json"),

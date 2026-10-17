@@ -30,7 +30,8 @@ dabao-ocr batch "D:/photos/" -o "D:/out/" --format jsonl
 - 退出码：`0` 成功（含“无文字”）；`2` 失败（文件不存在 / 引擎错误，stderr 有原因）
 - 输出编码始终 UTF-8（与 bash / MSYS 兼容）
 - 相对路径按调用者 cwd 解析；引擎自身不弹任何窗口，可放心在后台调用
-- 参数：`--language`（6 种）、`--parser`（8 种排版方案）、`--angle`、`--max-side`、`--ignore-area`
+- 参数：`--language`（6 种）、`--parser`（8 种排版方案 + 4 种 `single_*_fixed` 修正版，拼错会直接报错）、`--angle`、`--max-side`、`--ignore-area`
+- 若本机常驻服务在跑，`ocr` / `batch` 会自动走它（省 ~0.3s/次）；`--no-service` 强制本地
 
 ## 2. HTTP 通道（推荐：高频/多任务/跨进程）
 
@@ -88,12 +89,18 @@ text = r.text
 
 ## 5. 工程化常驻（可选）
 
-若希望 HTTP 服务开机常驻：
+若希望 HTTP 服务开机常驻，**用仓库自带的一键部署**（登录自启 + 看门狗保活）：
 
-```bat
-:: 计划任务示例（管理员 cmd）
-schtasks /create /tn DabaoOCR /tr "D:\@kaifa\Dabao-OCR\.venv\Scripts\python.exe -m dabao_ocr serve --port 18224" /sc onlogon
+```bash
+.venv/Scripts/python.exe scripts/install_autostart.py            # 安装并立即生效
+.venv/Scripts/python.exe scripts/install_autostart.py --status    # 查看状态
+.venv/Scripts/python.exe scripts/install_autostart.py --uninstall # 卸载
 ```
+
+> 不建议自己写 `schtasks /sc onlogon`：那样只有启动、没有保活，进程挂了不会自动拉起。
+
+服务起来后，CLI 会**自动复用它**（省掉每次调用的引擎冷启动，约 0.3s/次）。
+需要强制走本地引擎时加 `--no-service`，或设 `DABAO_OCR_NO_SERVICE=1`。
 
 ## 6. 排障
 
@@ -101,6 +108,7 @@ schtasks /create /tn DabaoOCR /tr "D:\@kaifa\Dabao-OCR\.venv\Scripts\python.exe 
 |---|---|
 | `找不到 RapidOCR-json 引擎目录` | 确认 `vendor/RapidOCR-json/` 存在；或用环境变量 `DABAO_OCR_ENGINE_DIR` 指定 |
 | 首次识别慢（~1-2s） | 引擎冷启动正常；每次进程内会复用（HTTP/批处理场景一次性代价） |
+| CLI 每次都慢 0.3s 左右 | 常驻服务没在跑，回落本地引擎；先启动 `serve` 即可复用 |
 | `code 200 Image path dose not exist` | 路径不存在或格式不对（引擎只认 png/jpg/webp/bmp/tif 等） |
-| 长时间无响应 | 单请求默认超时 180s，可 `DABAO_OCR_TIMEOUT` 调大；引擎卡死会自动重启重试 |
+| 长时间无响应 | 单请求默认超时 180s，可 `DABAO_OCR_TIMEOUT` 调大；引擎卡死会自动重启重试（超时不重试） |
 | PDF 报 `需要 PyMuPDF` | `pip install PyMuPDF` 或 `pip install -e ".[pdf]"` |

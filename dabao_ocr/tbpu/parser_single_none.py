@@ -17,3 +17,12 @@ class SingleNone(SingleLine):
                 letter2 = textBlocks[i + 1]["text"][0]
                 textBlocks[i]["end"] = word_separator(letter1, letter2)
         return textBlocks
+
+
+class SingleNoneFixed(SingleNone):
+    """单栏-无换行（修正版）：行高按两块真实高度取均值。"""
+
+    FIX_LINE_HEIGHT = True
+
+    def __init__(self):
+        self.tbpuName = "排版解析-单栏-无换行（修正）"

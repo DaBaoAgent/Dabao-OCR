@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/语言模型-6%20种-3776AB" alt="Languages">
   <img src="https://img.shields.io/badge/排版解析-8%20种-6B4EFF" alt="Parser">
   <img src="https://img.shields.io/badge/依赖-仅标准库-FF6B35" alt="Deps">
-  <img src="https://img.shields.io/badge/测试-135%2B%20项-2ea44f" alt="Tests">
+  <img src="https://img.shields.io/badge/测试-85%20项-2ea44f" alt="Tests">
   <img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="License">
 </p>
 
@@ -27,11 +27,13 @@ Dabao-OCR 与 Umi-OCR 使用**同一套识别引擎（RapidOCR-json）与同一�
 
 - 🔌 **完全离线**：识别过程零网络依赖（引擎与模型全部内置在 `vendor/`）
 - 🈶 **6 种语言模型**：简体中文 / English / 繁體中文 / 日本語 / 한국어 / Русский
-- 📐 **8 种排版解析**：多栏/单栏 × 自然段/换行/无换行/代码缩进（Umi-OCR 同款算法）
+- 📐 **8 种排版解析 + 4 种修正版**：多栏/单栏 × 自然段/换行/无换行/代码缩进（Umi-OCR 同款算法）；
+  `single_*_fixed` 修正了原版单栏方案的两处计算缺陷，原 8 种保持逐块一致
 - 📄 **PDF 支持**：逐页识别、页范围选取、生成**双层可搜索 PDF**
 - 🌐 **HTTP API**：兼容原版 Umi-OCR 的 `/api/ocr` 协议（现有客户端可无缝迁移）；另提供 `batch` / `pdf` / `status` 增强端点
+- ⚡ **CLI 快通道**：检测到本机常驻服务时自动复用，省掉每次调用的引擎冷启动（`--no-service` 可强制本地）
 - 🧰 **零基础依赖**：核心仅用 Python 标准库；PDF 功能为可选依赖（PyMuPDF）
-- ✅ **135+ 项自动化测试**
+- ✅ **85 项自动化测试**
 
 ---
 
@@ -75,6 +77,9 @@ dabao-ocr pdf doc.pdf --layered out.pdf           # 生成双层（可搜索）P
 
 # 常驻 HTTP 服务（默认 127.0.0.1:18224）
 dabao-ocr serve --port 18224
+
+# 若常驻服务已在跑，ocr / batch 会自动复用它（省掉引擎冷启动）
+dabao-ocr ocr photo.png --no-service    # 强制本地拉起引擎
 ```
 
 ### HTTP API
@@ -148,6 +153,16 @@ dabao-ocr serve &                          # 只启动一次
 curl -s 127.0.0.1:18224/api/ocr -X POST -d '{"path":"..."}'
 ```
 
+命令行会自动复用常驻服务（`--no-service` 可关闭）。实测单张图端到端耗时：
+
+| 路径 | 耗时 |
+|---|---|
+| 走常驻服务（热引擎） | ≈0.55 s |
+| 冷启动（每次新拉引擎） | ≈0.76 s |
+
+即每次调用省下约 0.2 s 的引擎加载开销。**测速时请留意机器上是否有其他重负载进程**——
+它们会争抢引擎的 16 个工作线程，能把 0.4 s 的识别拖到 2 s，从而误判成"服务比冷启动慢"。
+
 ---
 
 ## 开机自启（Windows，可选）
@@ -157,6 +172,7 @@ curl -s 127.0.0.1:18224/api/ocr -X POST -d '{"path":"..."}'
 ```bash
 .venv/Scripts/python.exe scripts/install_autostart.py            # 安装并立即生效
 .venv/Scripts/python.exe scripts/install_autostart.py --status    # 查看状态
+.venv/Scripts/python.exe scripts/install_autostart.py --stop      # 停止运行中的服务
 .venv/Scripts/python.exe scripts/install_autostart.py --uninstall # 卸载
 ```
 
@@ -166,6 +182,16 @@ curl -s 127.0.0.1:18224/api/ocr -X POST -d '{"path":"..."}'
 | 计划任务 `DabaoOCR_Watchdog` | 每 5 分钟健康检查，服务掉了自动拉起 |
 
 服务日志：`logs/serve.log`。
+
+> 看门狗任务以当前用户身份注册，**仅在用户登录后运行**（`--status` 显示「只使用交互方式」）。
+> 这是有意为之：服务本身由登录 vbs 拉起，用户未登录时本来也没人调用，无需后台常驻。
+
+> `--status` 会同时报告 vbs、计划任务和服务在线状态。若显示「看门狗任务：不存在」，
+> 说明安装没跑完整（或任务被删了），重跑一次安装即可 —— 只有 vbs 而没有看门狗时，
+> 服务挂了不会自动恢复。
+>
+> 停止服务请用 `--stop`（按端口定位 PID），**不要** `taskkill /IM pythonw.exe`，
+> 那会连带杀掉本机其他无关的 pythonw 进程。
 
 ---
 
@@ -177,7 +203,7 @@ Dabao-OCR/
 │   ├── engine.py              #   引擎进程管理（线程安全 / 自动重启 / LRU 缓存）
 │   ├── ocr.py                 #   高层 API：recognize / recognize_base64
 │   ├── result.py              #   结果类型与文本拼接
-│   ├── tbpu/                  #   排版解析（移植自 Umi-OCR，8 种方案）
+│   ├── tbpu/                  #   排版解析（移植自 Umi-OCR，8 种方案 + 4 种修正版）
 │   ├── pdf.py                 #   PDF 渲染 / 识别 / 双层 PDF
 │   ├── exporters.py           #   txt/json/jsonl/md/csv 导出
 │   ├── options.py             #   HTTP 选项表（Umi-OCR 兼容）
@@ -185,9 +211,10 @@ Dabao-OCR/
 │   └── cli.py                 #   命令行入口
 ├── vendor/RapidOCR-json/      # 引擎二进制 + 模型（MIT, © hiroi-sora）
 ├── scripts/                   # 部署脚本（serve.cmd / watchdog.py / install_autostart.py）
-├── tests/                     # 测试套件（含与原版的一致性对比）
+├── tests/                     # 测试套件（引擎/识别/排版/HTTP/CLI/PDF）
 ├── examples/agent-usage.md    # agent 使用手册
 ├── docs/STRIPPING.md          # 剥离与重写记录
+├── CHANGELOG.md               # 版本变更记录
 └── pyproject.toml
 ```
 
@@ -200,7 +227,7 @@ uv pip install --python .venv/Scripts/python.exe -e ".[dev]"
 .venv/Scripts/python -m pytest tests -q
 ```
 
-测试覆盖：引擎生命周期与崩溃恢复、识别全路径、8 种排版解析、忽略区域、6 类语言切换、PDF（渲染/识别/双层/可搜索）、HTTP API（兼容协议/错误码/CORS/增强端点）、CLI 端到端。
+测试覆盖：引擎生命周期与崩溃恢复、识别全路径、8 种排版解析 + 4 种修正版、忽略区域、6 类语言切换、PDF（渲染/识别/双层/可搜索）、HTTP API（兼容协议/错误码/CORS/增强端点）、CLI 端到端、导出器与语言表。
 
 ---
 
@@ -210,6 +237,18 @@ uv pip install --python .venv/Scripts/python.exe -e ".[dev]"
 - 二维码识别（原版 Umi-OCR 的附加功能）未包含
 - 截图/剪贴板等 GUI 交互不在范围内
 - 引擎为单进程管道串行模型，超大并发请多起服务实例
+
+## 环境变量
+
+| 变量 | 默认 | 作用 |
+|---|---|---|
+| `DABAO_OCR_ENGINE_DIR` | `vendor/RapidOCR-json` | 引擎目录（含 exe 与 models/） |
+| `DABAO_OCR_TIMEOUT` | `180` | 单次识别超时（秒） |
+| `DABAO_OCR_MAX_ENGINES` | `2` | 引擎实例 LRU 上限（每实例一份模型内存） |
+| `DABAO_OCR_NUM_THREAD` | CPU 核心数 | 引擎线程数（后台服务想少占核心时设 4） |
+| `DABAO_OCR_NO_SERVICE` | 未设置 | 设为 1 则 CLI 不复用常驻服务 |
+| `DABAO_OCR_SERVICE_URL` | `http://127.0.0.1:18224` | 常驻服务地址 |
+| `DABAO_OCR_LOG_LEVEL` | `WARNING` | 日志级别（DEBUG/INFO/WARNING/ERROR） |
 
 ---
 
